@@ -3,7 +3,7 @@ import random
 from telebot import types
 import sqlite3
 
-bot = tb.TeleBot('5704600236:AAHptmxlwUhR0_VYIEaBLAo2g2JBqzmELfc')
+bot = tb.TeleBot('Token')
 
 name = ''
 zac = []
