@@ -1,0 +1,138 @@
+import telebot as tb
+import random
+from telebot import types
+import sqlite3
+
+bot = tb.TeleBot('5704600236:AAHptmxlwUhR0_VYIEaBLAo2g2JBqzmELfc')
+
+name = ''
+zac = []
+cen = 0
+parol = '123'
+table = 0
+
+menu = {'Котлетки': 200,
+        'Суп': 300,
+        'Макароны': 400}
+
+def create_menu_buttons(chunk):
+    var = []
+    for key, value in chunk.items():
+            var.append('{}, {} рублей'.format(key, value))
+    keyboard = types.InlineKeyboardMarkup()
+    for x in var:
+        keyboard.add(types.InlineKeyboardButton(text=x, callback_data=x))    
+    keyboard.add(types.InlineKeyboardButton(text="Корзина", callback_data='basket'))
+    return keyboard
+
+def create_reqs_buttons(chunk):
+        var = []
+        for key, value in chunk.items():
+            var.append('{}, ID: {}'.format(value, key))
+        keyboard = types.InlineKeyboardMarkup()
+        for x in var:
+            keyboard.add(types.InlineKeyboardButton(text=x, callback_data=x))
+        return keyboard
+
+
+@bot.message_handler(commands=['start', 'go'])
+def start(message):
+    chat_id = message.chat.id
+    text = message.text
+    msg = bot.send_message(chat_id, 'Есть контакт! Как Вас зовут?')
+    bot.register_next_step_handler(msg, get_name)
+
+def get_name(message):
+    global name
+    global menu
+    chat_id = message.chat.id
+    name = message.text
+    if name == 'admin':
+        msg = bot.send_message(chat_id, 'Введите пароль')
+        bot.register_next_step_handler(msg, get_parol)
+    else:
+        msg = bot.send_message(chat_id, 'Введите номер Вашего столика')
+        bot.register_next_step_handler(msg, get_table)
+
+
+def get_table(message):
+        global table
+        table = message.text
+        chat_id = message.chat.id
+        msg = bot.send_message(chat_id, text='Что будете заказывать?', reply_markup=create_menu_buttons(menu))
+        bot.register_next_step_handler(msg, get_it)
+
+def get_parol(message):
+    global parol
+    chat_id = message.chat.id
+    pp = message.text
+    if pp == parol:
+        msg = bot.send_message(chat_id, 'Пароль верен')
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        btn1 = types.KeyboardButton("Показать список заказов")
+        btn2 = types.KeyboardButton("Сообщить о выполнении заказа")
+        markup.add(btn1, btn2)
+        bot.send_message(chat_id, text='Что Вам угодно?', reply_markup=markup)
+    else:
+        msg = bot.send_message(chat_id, 'Неверно. Введите пароль ещё раз.')
+        bot.register_next_step_handler(msg, get_parol)
+        
+
+@bot.callback_query_handler(func=lambda call: True)
+def get_it(call):
+    global zac
+    global cen
+    if call.data == 'basket':
+        bot.send_message(call.message.chat.id, 'Ваш заказ: ' + ', '.join(zac) + '; Его стоимость: ' + str(cen) + '. Официант вскоре принесёт его Вам')
+        conn = sqlite3.connect('users_2.db')
+        cursor = conn.cursor()
+        command = "INSERT INTO users_2 (user_name, number_of_table, user_zac, user_cen, status) VALUES ('{}', {}, '{}',  {}, 'Готовится')".format(name, table, ', '.join(zac), cen)
+        cursor.execute(command)
+        conn.commit()
+    if 'рублей' in call.data:
+        to_bask = call.data[:-7].split(', ')
+        zac.append(to_bask[0])
+        cen += int(to_bask[-1])
+    if 'ID' in call.data:
+        changer = call.data.split(', ID: ')
+        conn = sqlite3.connect('users_2.db')
+        cursor = conn.cursor()
+        command = 'UPDATE users_2 SET status="Готов" WHERE user_ID={}'.format(changer[1])
+        cursor.execute(command)
+        conn.commit()
+
+@bot.message_handler(content_types=['text'])
+def final(message):       
+    if message.text == 'Показать список заказов':
+        reqs = []
+        chat_id = message.chat.id
+        conn = sqlite3.connect('users_2.db')
+        cursor = conn.cursor()
+        cursor.execute("""SELECT * from users_2""")
+        for req in cursor.fetchall():
+            if 'Готовится' in req:
+                    reqs.append(req)
+        bot.send_message(chat_id, "Число заказов: " + str(len(reqs)))
+        for row in reqs:     
+            bot.send_message(chat_id, "ID: " + str(row[0]))
+            bot.send_message(chat_id, "Имя заказчика: " + str(row[1]))
+            bot.send_message(chat_id, "Заказ: " + str(row[3]))
+            bot.send_message(chat_id, "Сумма заказа: " + str(row[4]))
+            bot.send_message(chat_id, '------')
+            
+    if message.text == "Сообщить о выполнении заказа":
+        chat_id = message.chat.id
+        reqs_2 = []
+        requests = {}
+        conn = sqlite3.connect('users_2.db')
+        cursor = conn.cursor()
+        cursor.execute("""SELECT user_ID, user_name, status from users_2""")
+        for req in cursor.fetchall():
+                if 'Готовится' in req:
+                    reqs_2.append(req)
+        for row in reqs_2:
+                requests[row[0]] = row[1]
+        bot.send_message(chat_id, text="Чей именно заказ готов?", reply_markup=create_reqs_buttons(requests))
+        
+        
+bot.polling(non_stop=True)
